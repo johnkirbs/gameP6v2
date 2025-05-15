@@ -24,31 +24,55 @@ def generate_assets():
     
     # Generate water background
     print("Creating water background...")
-    water = pygame.Surface((200, 200))
-    water.fill((0, 70, 150))  # Dark blue
-    # Add some wave lines
-    for y in range(0, 200, 10):
-        pygame.draw.line(water, (0, 100, 200), (0, y), (200, y), 2)
+    water = pygame.Surface((300, 300))
+    water.fill((10, 50, 120))  # Dark blue
+    
+    # Add subtle grid pattern instead of wave lines
+    for x in range(0, 300, 50):
+        pygame.draw.line(water, (20, 60, 140), (x, 0), (x, 300), 1)
+    for y in range(0, 300, 50):
+        pygame.draw.line(water, (20, 60, 140), (0, y), (300, y), 1)
+    
+    # Add some small dots as reference points
+    for x in range(25, 300, 50):
+        for y in range(25, 300, 50):
+            pygame.draw.circle(water, (30, 70, 150), (x, y), 2)
+    
     pygame.image.save(water, "assets/textures/water.png")
     
     # Generate boat
     print("Creating boat image...")
     boat = pygame.Surface((60, 100), pygame.SRCALPHA)
-    # Draw boat shape
-    pygame.draw.polygon(boat, (200, 200, 200), [(30, 0), (60, 90), (40, 75), (20, 75), (0, 90)])
-    # Add some details
-    pygame.draw.rect(boat, (139, 69, 19), (20, 30, 20, 20))  # Cabin
+    
+    # Draw boat shape with brighter colors
+    pygame.draw.polygon(boat, (240, 240, 240), [(30, 0), (60, 90), (40, 75), (20, 75), (0, 90)])
+    
+    # Add more detailed cabin
+    pygame.draw.rect(boat, (160, 80, 40), (20, 30, 20, 20))  # Cabin
+    pygame.draw.rect(boat, (180, 180, 180), (25, 35, 10, 10))  # Window
+    
+    # Add distinctive markings for orientation
+    pygame.draw.circle(boat, (220, 50, 50), (30, 15), 5)  # Red marker at front
+    pygame.draw.rect(boat, (50, 50, 180), (23, 55, 14, 5))  # Blue stripe near back
+    
     pygame.image.save(boat, "assets/textures/boat.png")
     
     # Generate island
     print("Creating island image...")
     island = pygame.Surface((160, 160), pygame.SRCALPHA)
-    # Draw island base
-    pygame.draw.circle(island, (194, 178, 128), (80, 80), 70)  # Sand
-    # Add vegetation
-    pygame.draw.circle(island, (34, 139, 34), (60, 60), 30)  # Trees
-    pygame.draw.circle(island, (34, 139, 34), (90, 50), 25)  # Trees
-    pygame.draw.circle(island, (34, 139, 34), (110, 80), 20)  # Trees
+    
+    # Draw island base with more distinctive colors
+    pygame.draw.circle(island, (220, 200, 120), (80, 80), 70)  # Brighter sand
+    
+    # Add vegetation with more contrast
+    pygame.draw.circle(island, (34, 160, 34), (60, 60), 30)  # Brighter green trees
+    pygame.draw.circle(island, (34, 180, 34), (90, 50), 25)  # Trees
+    pygame.draw.circle(island, (34, 160, 34), (110, 80), 20)  # Trees
+    
+    # Add a distinctive marker/feature to make island more recognizable
+    pygame.draw.circle(island, (180, 60, 60), (80, 60), 12)  # Red marker/building
+    pygame.draw.rect(island, (150, 150, 150), (75, 20, 10, 30))  # Lighthouse or tower
+    
     pygame.image.save(island, "assets/textures/island.png")
     
     # Generate arrow
