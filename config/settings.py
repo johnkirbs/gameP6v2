@@ -18,34 +18,34 @@ class Settings:
         self.RED = (255, 0, 0)
         
         # Game mechanics
-        self.BOAT_SPEED = 2.0
-        self.BOAT_ROTATION_SPEED = 3.0
+        self.BOAT_SPEED = 1.5
+        self.BOAT_ROTATION_SPEED = 2.0
         self.BOAT_BOOST_MULTIPLIER = 1.5
         self.BOAT_WAKE_LIFETIME = 1.0
         self.BOAT_WAKE_SIZE = 5
         
         # Current settings (fixed)
-        self.CURRENT_MAGNITUDE = 1.0  # Fixed current strength
-        self.CURRENT_DIRECTION = 45  # Initial current direction (will change on restart)
+        self.CURRENT_MAGNITUDE = 0.7
+        self.CURRENT_DIRECTION = 45
         
         # Main target island settings
-        self.ISLAND_DISTANCE = 3000  # Increased distance to target island
+        self.ISLAND_DISTANCE = 1000  # Reduced from 3000 to 1000
         self.ISLAND_RADIUS = 80
         self.ISLAND_GLOW_INTENSITY = 0.5
         
-        # Decorative islands settings (moved further out from start)
+        # Decorative islands settings (adjusted for shorter distance)
         self.DECORATIVE_ISLANDS = [
-            {"x": 1500, "y": 800, "size": 60},
-            {"x": -1200, "y": 1000, "size": 40},
-            {"x": 1800, "y": -600, "size": 50},
-            {"x": -1500, "y": -800, "size": 45},
-            {"x": 2000, "y": 1200, "size": 55},
+            {"x": 500, "y": 300, "size": 60},
+            {"x": -400, "y": 400, "size": 40},
+            {"x": 600, "y": -200, "size": 50},
+            {"x": -500, "y": -300, "size": 45},
+            {"x": 700, "y": 400, "size": 55},
         ]
         
         # Wave/current settings
-        self.MIN_WAVE_MAGNITUDE = 0.5
-        self.MAX_WAVE_MAGNITUDE = 2.5
-        self.WAVE_CHANGE_INTERVAL = 3000  # milliseconds
+        self.MIN_WAVE_MAGNITUDE = 0.3
+        self.MAX_WAVE_MAGNITUDE = 1.5
+        self.WAVE_CHANGE_INTERVAL = 4000
         self.WAVE_PARTICLE_COUNT = 20
         
         # Visual effects

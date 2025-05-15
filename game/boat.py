@@ -47,14 +47,14 @@ class Boat:
         self.left_force = 0  # Force applied from left arrow (0-100)
         self.right_force = 0  # Force applied from right arrow (0-100)
         self.MAX_FORCE = 100
-        self.FORCE_INCREMENT = 2  # Force added per tap
+        self.FORCE_INCREMENT = 20  # Increased from 2 for more immediate response
         
         # Physics constants
-        self.MOMENTUM_DAMPING = 0.95
-        self.ANGULAR_DAMPING = 0.95  # Increased damping for smoother rotation
-        self.FORCE_TO_ROTATION = 0.05  # Reduced for gentler rotation
-        self.MAX_ANGULAR_VELOCITY = 2.0  # Reduced maximum rotation speed
-        self.MAX_ROTATION_FORCE = 40  # Maximum force that affects rotation
+        self.MOMENTUM_DAMPING = 0.98  # Increased from 0.95 for smoother movement
+        self.ANGULAR_DAMPING = 0.98  # Increased from 0.95
+        self.FORCE_TO_ROTATION = 0.03  # Reduced from 0.05 for gentler rotation
+        self.MAX_ANGULAR_VELOCITY = 1.5  # Reduced from 2.0
+        self.MAX_ROTATION_FORCE = 30  # Reduced from 40
         
         # Visual effects
         self.wake_particles = []
@@ -73,8 +73,54 @@ class Boat:
         self.power_up_region = pygame.Rect(0, 0, screen_rect.width, screen_third)
         self.power_down_region = pygame.Rect(0, screen_third * 2, screen_rect.width, screen_third)
         
+        # Control state
+        self.left_active = False
+        self.right_active = False
+        self.power_up_active = False
+        self.power_down_active = False
+        
+    def handle_keydown(self, key):
+        """Handle key press events"""
+        if key == pygame.K_LEFT:
+            self.left_active = not self.left_active
+            if not self.left_active:
+                self.left_force = 0
+        elif key == pygame.K_RIGHT:
+            self.right_active = not self.right_active
+            if not self.right_active:
+                self.right_force = 0
+        elif key == pygame.K_UP:
+            self.power_up_active = not self.power_up_active
+        elif key == pygame.K_DOWN:
+            self.power_down_active = not self.power_down_active
+    
+    def handle_mouse_click(self, pos):
+        """Handle mouse click events"""
+        if self.left_click_region.collidepoint(pos):
+            self.left_active = not self.left_active
+            if not self.left_active:
+                self.left_force = 0
+        elif self.right_click_region.collidepoint(pos):
+            self.right_active = not self.right_active
+            if not self.right_active:
+                self.right_force = 0
+        elif self.power_up_region.collidepoint(pos):
+            self.power_up_active = not self.power_up_active
+        elif self.power_down_region.collidepoint(pos):
+            self.power_down_active = not self.power_down_active
+    
     def update(self, current_vector):
         """Update the boat's position based on forces and currents"""
+        # Update forces based on active controls
+        if self.left_active:
+            self.left_force = min(self.MAX_FORCE, self.left_force + self.FORCE_INCREMENT)
+        if self.right_active:
+            self.right_force = min(self.MAX_FORCE, self.right_force + self.FORCE_INCREMENT)
+        if self.power_up_active:
+            self.adjust_power(True)
+        if self.power_down_active:
+            self.adjust_power(False)
+        
         # Calculate net torque from forces with limits
         left_rotation_force = min(self.left_force, self.MAX_ROTATION_FORCE)
         right_rotation_force = min(self.right_force, self.MAX_ROTATION_FORCE)
@@ -187,18 +233,20 @@ class Boat:
     
     def draw_force_arrows(self, screen):
         """Draw the force arrows for steering and power control"""
-        # Arrow dimensions
-        arrow_width = 80
-        arrow_height = 30
-        spacing = 40
-        base_y = self.rect.bottom + 50
+        # Arrow dimensions (reduced sizes)
+        arrow_width = 50  # Reduced from 80
+        arrow_height = 20  # Reduced from 30
+        spacing = 60  # Increased spacing between arrows
+        base_y = self.rect.bottom + 40  # Moved arrows closer to boat
         
-        # Draw horizontal force arrows (existing code)
+        # Calculate positions for arrows pointing at each other
         left_x = self.rect.centerx - spacing
         right_x = self.rect.centerx + spacing
         
-        left_color = (255, int(255 * (1 - self.left_force/self.MAX_FORCE)), 0) if self.left_force > 0 else (100, 100, 100)
-        right_color = (255, int(255 * (1 - self.right_force/self.MAX_FORCE)), 0) if self.right_force > 0 else (100, 100, 100)
+        # Update arrow colors based on active state
+        left_color = (255, int(255 * (1 - self.left_force/self.MAX_FORCE)), 0) if self.left_active else (100, 100, 100)
+        right_color = (255, int(255 * (1 - self.right_force/self.MAX_FORCE)), 0) if self.right_active else (100, 100, 100)
+        power_color = (0, 255, int(255 * (1 - self.power_level/self.MAX_POWER))) if (self.power_up_active or self.power_down_active) else (100, 100, 100)
         
         # Draw horizontal arrows (existing code)
         pygame.draw.rect(screen, left_color, 
@@ -206,8 +254,8 @@ class Boat:
                          arrow_width, arrow_height))
         pygame.draw.polygon(screen, left_color, [
             (left_x, base_y),
-            (left_x - 10, base_y - arrow_height//2 - 10),
-            (left_x - 10, base_y + arrow_height//2 + 10)
+            (left_x - 8, base_y - arrow_height//2 - 8),
+            (left_x - 8, base_y + arrow_height//2 + 8)
         ])
         
         pygame.draw.rect(screen, right_color, 
@@ -215,38 +263,37 @@ class Boat:
                          arrow_width, arrow_height))
         pygame.draw.polygon(screen, right_color, [
             (right_x, base_y),
-            (right_x + 10, base_y - arrow_height//2 - 10),
-            (right_x + 10, base_y + arrow_height//2 + 10)
+            (right_x + 8, base_y - arrow_height//2 - 8),
+            (right_x + 8, base_y + arrow_height//2 + 8)
         ])
         
-        # Draw vertical power arrows
+        # Draw vertical power arrows (smaller size)
         power_x = self.rect.centerx
-        up_y = base_y - 80
-        down_y = base_y + 80
-        power_color = (0, 255, int(255 * (1 - self.power_level/self.MAX_POWER)))
+        up_y = base_y - 50  # Reduced vertical spacing
+        down_y = base_y + 50  # Reduced vertical spacing
         
-        # Up arrow
+        # Up arrow (smaller)
         pygame.draw.rect(screen, power_color, 
-                        (power_x - arrow_height//2, up_y - arrow_width,
-                         arrow_height, arrow_width))
+                        (power_x - arrow_height//2, up_y - arrow_width//2,
+                         arrow_height, arrow_width//2))
         pygame.draw.polygon(screen, power_color, [
-            (power_x, up_y - arrow_width - 10),
-            (power_x - arrow_height//2 - 10, up_y - arrow_width + 10),
-            (power_x + arrow_height//2 + 10, up_y - arrow_width + 10)
+            (power_x, up_y - arrow_width//2 - 8),
+            (power_x - arrow_height//2 - 8, up_y - arrow_width//2 + 8),
+            (power_x + arrow_height//2 + 8, up_y - arrow_width//2 + 8)
         ])
         
-        # Down arrow
+        # Down arrow (smaller)
         pygame.draw.rect(screen, power_color, 
                         (power_x - arrow_height//2, down_y,
-                         arrow_height, arrow_width))
+                         arrow_height, arrow_width//2))
         pygame.draw.polygon(screen, power_color, [
-            (power_x, down_y + arrow_width + 10),
-            (power_x - arrow_height//2 - 10, down_y + arrow_width - 10),
-            (power_x + arrow_height//2 + 10, down_y + arrow_width - 10)
+            (power_x, down_y + arrow_width//2 + 8),
+            (power_x - arrow_height//2 - 8, down_y + arrow_width//2 - 8),
+            (power_x + arrow_height//2 + 8, down_y + arrow_width//2 - 8)
         ])
         
         # Draw force values and power level
-        font = pygame.font.SysFont(None, 30)
+        font = pygame.font.SysFont(None, 24)  # Smaller font
         
         # Draw horizontal force values
         for x, force, align in [(left_x - arrow_width//2, self.left_force, "right"),
@@ -283,7 +330,13 @@ class Boat:
         self.right_force = 0
         self.power_level = 50  # Reset power to default
         self.wake_particles.clear()
-
+        
+        # Reset control states
+        self.left_active = False
+        self.right_active = False
+        self.power_up_active = False
+        self.power_down_active = False
+    
     def adjust_power(self, increase):
         """Adjust the boat's power level"""
         if increase:
