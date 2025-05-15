@@ -66,7 +66,17 @@ class GameEngine:
         
         # Game state
         self.world_pos = [0, 0]  # World position
-        self.game_state = "playing"  # Can be "playing", "win", "lose"
+        self.game_state = "playing"  # Can be "playing", "win", "fail", "restart"
+        self.restart_requested = False
+        
+        # Get all islands including decorative ones
+        self.all_islands = settings.DECORATIVE_ISLANDS.copy()
+        self.all_islands.append({
+            "x": settings.ISLAND_DISTANCE,
+            "y": 0,
+            "size": settings.ISLAND_RADIUS,
+            "is_target": True
+        })
         
         # Target island
         self.island_pos = [settings.ISLAND_DISTANCE, 0]  # Relative to start position
@@ -93,7 +103,26 @@ class GameEngine:
         
     def handle_event(self, event):
         """Handle game events"""
-        self.player.handle_event(event)
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_r and self.game_state == "fail":
+            self.restart_game()
+        elif self.game_state == "playing":
+            self.player.handle_event(event)
+        
+    def restart_game(self):
+        """Restart the game with new current settings"""
+        # Reset boat position and state
+        self.boat.reset(self.screen.get_rect())
+        
+        # Reset world position
+        self.world_pos = [0, 0]
+        
+        # Change current direction randomly
+        import random
+        self.settings.CURRENT_DIRECTION = random.randint(0, 359)
+        self.wave_generator = WaveGenerator(self.settings)
+        
+        # Reset game state
+        self.game_state = "playing"
         
     def update(self):
         """Update game state"""
@@ -111,44 +140,88 @@ class GameEngine:
         self.world_pos[0] = boat_pos[0]
         self.world_pos[1] = boat_pos[1]
         
+        # Check collisions with all islands
+        if self.boat.check_collision(self.all_islands):
+            # Check if it's the target island
+            target_distance = math.sqrt(
+                (self.world_pos[0] - self.settings.ISLAND_DISTANCE) ** 2 +
+                self.world_pos[1] ** 2
+            )
+            
+            if target_distance < self.settings.ISLAND_RADIUS:
+                self.game_state = "win"
+            else:
+                self.game_state = "fail"
+        
         # Update background offset for tiling
         self.background_offset[0] = -(self.world_pos[0] % self.background_large.get_width())
         self.background_offset[1] = -(self.world_pos[1] % self.background_large.get_height())
         
-        # Check for island collision (win condition)
-        island_screen_pos = self._world_to_screen(self.island_pos)
-        distance_to_island = math.sqrt(
-            (island_screen_pos[0] - self.screen.get_rect().centerx) ** 2 +
-            (island_screen_pos[1] - self.screen.get_rect().centery) ** 2
-        )
-        
-        if distance_to_island < self.settings.ISLAND_RADIUS:
-            self.game_state = "win"
-            
     def draw(self):
         """Draw the game state"""
+        if self.game_state == "fail":
+            # On failure, draw only black background and message
+            self.screen.fill(self.settings.BLACK)
+            self._draw_message("Mission Failed! Hit wrong island! Press R to restart", self.settings.RED)
+            return
+            
         # Draw tiled background
         self.screen.blit(self.background_large, self.background_offset)
         
-        # Draw the island
+        # Draw decorative islands
+        for island in self.settings.DECORATIVE_ISLANDS:
+            screen_pos = self._world_to_screen([island["x"], island["y"]])
+            
+            # Check if island is within view distance
+            if (-100 <= screen_pos[0] <= self.settings.SCREEN_WIDTH + 100 and
+                -100 <= screen_pos[1] <= self.settings.SCREEN_HEIGHT + 100):
+                
+                # Create scaled island surface if needed
+                scale = island["size"] / self.settings.ISLAND_RADIUS
+                scaled_size = (int(self.island_image.get_width() * scale),
+                             int(self.island_image.get_height() * scale))
+                
+                scaled_island = pygame.transform.scale(self.island_image, scaled_size)
+                island_rect = scaled_island.get_rect(center=screen_pos)
+                
+                # Draw island with sand circle underneath
+                sand_surf = pygame.Surface((island["size"] * 2.2, island["size"] * 2.2), pygame.SRCALPHA)
+                pygame.draw.circle(sand_surf, (*self.settings.SAND_COLOR, 180), 
+                                 (island["size"] * 1.1, island["size"] * 1.1), 
+                                 island["size"] * 1.1)
+                self.screen.blit(sand_surf, (screen_pos[0] - island["size"] * 1.1,
+                                           screen_pos[1] - island["size"] * 1.1))
+                self.screen.blit(scaled_island, island_rect)
+        
+        # Draw the target island
         island_screen_pos = self._world_to_screen(self.island_pos)
         self.island_rect.center = island_screen_pos
         
-        # Check if island is within view distance for drawing
-        island_in_view = (
-            -100 <= island_screen_pos[0] <= self.settings.SCREEN_WIDTH + 100 and
-            -100 <= island_screen_pos[1] <= self.settings.SCREEN_HEIGHT + 100
-        )
-        
-        if island_in_view:
-            # Draw the island
+        # Check if target island is within view distance
+        if (-100 <= island_screen_pos[0] <= self.settings.SCREEN_WIDTH + 100 and
+            -100 <= island_screen_pos[1] <= self.settings.SCREEN_HEIGHT + 100):
+            
+            # Draw sand circle underneath target island
+            sand_surf = pygame.Surface((self.settings.ISLAND_RADIUS * 2.2, 
+                                      self.settings.ISLAND_RADIUS * 2.2), pygame.SRCALPHA)
+            pygame.draw.circle(sand_surf, (*self.settings.SAND_COLOR, 180), 
+                             (self.settings.ISLAND_RADIUS * 1.1, self.settings.ISLAND_RADIUS * 1.1), 
+                             self.settings.ISLAND_RADIUS * 1.1)
+            self.screen.blit(sand_surf, (island_screen_pos[0] - self.settings.ISLAND_RADIUS * 1.1,
+                                       island_screen_pos[1] - self.settings.ISLAND_RADIUS * 1.1))
+            
+            # Draw the target island
             self.screen.blit(self.island_image, self.island_rect)
             
-            # Add a floating arrow above the island for better visibility
+            # Add a floating arrow above the target island
             arrow_height = 40
             arrow_width = 30
-            arrow_y_offset = -70  # Distance above island
-            arrow_bobbing = math.sin(pygame.time.get_ticks() / 500) * 5  # Bobbing motion
+            arrow_y_offset = -70
+            arrow_bobbing = math.sin(pygame.time.get_ticks() / 500) * 5
+            
+            # Draw target indicator
+            pygame.draw.circle(self.screen, (255, 255, 0, 100), island_screen_pos, 
+                             self.settings.ISLAND_RADIUS + 10, 3)
             
             arrow_points = [
                 (island_screen_pos[0], island_screen_pos[1] + arrow_y_offset + arrow_bobbing),
@@ -156,25 +229,23 @@ class GameEngine:
                 (island_screen_pos[0] + arrow_width//2, island_screen_pos[1] + arrow_y_offset + arrow_height + arrow_bobbing)
             ]
             
-            # Pulsating effect
-            alpha = 128 + int(127 * math.sin(pygame.time.get_ticks() / 1000))
-            
             # Draw arrow with glow effect
             glow_surf = pygame.Surface((arrow_width + 20, arrow_height + 20), pygame.SRCALPHA)
+            alpha = 128 + int(127 * math.sin(pygame.time.get_ticks() / 1000))
             pygame.draw.polygon(glow_surf, (255, 255, 0, alpha), [
                 (arrow_width//2 + 10, 10),
                 (10, arrow_height + 10),
                 (arrow_width + 10, arrow_height + 10)
             ])
-            self.screen.blit(glow_surf, (arrow_points[0][0] - arrow_width//2 - 10, arrow_points[0][1] - 10))
+            self.screen.blit(glow_surf, (arrow_points[0][0] - arrow_width//2 - 10, 
+                                       arrow_points[0][1] - 10))
             
-            # Draw the actual arrow
             pygame.draw.polygon(self.screen, (255, 255, 0), arrow_points)
         
         # Draw wave indicator
         self.wave_generator.draw_indicator(self.screen, self.boat.rect)
         
-        # Draw the boat (always in center)
+        # Draw the boat
         self.boat.draw(self.screen)
         
         # Draw UI elements
@@ -182,8 +253,8 @@ class GameEngine:
         
         # Draw game state messages
         if self.game_state == "win":
-            self._draw_message("You reached the island! Victory!", self.settings.GREEN)
-        
+            self._draw_message("You reached the target island! Victory!", self.settings.GREEN)
+            
     def _world_to_screen(self, world_pos):
         """Convert world coordinates to screen coordinates"""
         screen_x = self.screen.get_rect().centerx - (self.world_pos[0] - world_pos[0])
@@ -265,12 +336,13 @@ class GameEngine:
     def _draw_message(self, message, color):
         """Draw a centered message on the screen"""
         text_surface = self.font.render(message, True, color)
-        text_rect = text_surface.get_rect(center=(self.settings.SCREEN_WIDTH // 2, self.settings.SCREEN_HEIGHT // 2))
+        text_rect = text_surface.get_rect(center=(self.settings.SCREEN_WIDTH // 2, 
+                                                self.settings.SCREEN_HEIGHT // 2))
         
         # Draw semi-transparent background
         bg_rect = text_rect.inflate(20, 20)
         bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
-        bg_surface.fill((0, 0, 0, 150))  # Semi-transparent black
+        bg_surface.fill((0, 0, 0, 150))
         self.screen.blit(bg_surface, bg_rect)
         
         # Draw text
