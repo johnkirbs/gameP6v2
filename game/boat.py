@@ -14,21 +14,21 @@ class Boat:
         try:
             if os.path.exists(settings.BOAT_TEXTURE):
                 self.original_image = pygame.image.load(settings.BOAT_TEXTURE).convert_alpha()
-                # Scale the image to desired size
-                self.original_image = pygame.transform.scale(self.original_image, (60, 100))
+                # Scale the image to smaller size
+                self.original_image = pygame.transform.scale(self.original_image, (40, 60))  # Reduced from (60, 100)
                 self.rect = self.original_image.get_rect()
             else:
                 # Fallback to a simple boat shape if texture not found
-                self.original_image = pygame.Surface((60, 100), pygame.SRCALPHA)
+                self.original_image = pygame.Surface((40, 60), pygame.SRCALPHA)  # Reduced size
                 pygame.draw.polygon(self.original_image, settings.WHITE, 
-                                   [(30, 0), (60, 90), (30, 75), (0, 90)])
+                                   [(20, 0), (40, 50), (20, 45), (0, 50)])  # Adjusted points for smaller size
                 self.rect = self.original_image.get_rect()
         except Exception as e:
             print(f"Boat image loading error: {e}. Using fallback.")
             # Fallback to a simple boat shape
-            self.original_image = pygame.Surface((60, 100), pygame.SRCALPHA)
+            self.original_image = pygame.Surface((40, 60), pygame.SRCALPHA)  # Reduced size
             pygame.draw.polygon(self.original_image, settings.WHITE, 
-                               [(30, 0), (60, 90), (30, 75), (0, 90)])
+                               [(20, 0), (40, 50), (20, 45), (0, 50)])  # Adjusted points
             self.rect = self.original_image.get_rect()
         
         # Position the boat at the center of the screen
@@ -40,70 +40,53 @@ class Boat:
         self.heading = 0  # in degrees, 0 is up
         self.velocity = [0, 0]
         self.momentum = [0, 0]
-        self.angular_velocity = 0  # Angular velocity for rotation
+        self.angular_velocity = 0
         self.image = self.original_image
         
-        # Steering forces
+        # Initialize all forces to 0
         self.left_force = 0
         self.right_force = 0
         self.forward_force = 0
         self.backward_force = 0
         self.MAX_FORCE = 100
-        self.FORCE_INCREMENT = 1  # 1N per tap
-        
-        # Rotation controls
-        self.rotation_speed = 2  # Degrees per tap
-        
-        # Physics constants
-        self.MOMENTUM_DAMPING = 0.98
-        self.ANGULAR_DAMPING = 0.99
-        self.FORCE_TO_ROTATION = 0.02
-        self.MAX_ANGULAR_VELOCITY = 1.0
-        self.MAX_ROTATION_FORCE = 20
-        
-        # Visual effects
-        self.wake_particles = []
-        self.MAX_WAKE_PARTICLES = 20
-        
-        # Power control
-        self.power_level = 50  # Default power level (0-100)
-        self.POWER_INCREMENT = 5  # Power adjustment per tap
-        self.MIN_POWER = 0
-        self.MAX_POWER = 100
-        
-        # Click regions for touch controls (smaller sizes)
-        self.arrow_width = 30
-        self.arrow_height = 15
-        self.spacing = 60
-        
-        # These will be updated in update_click_regions
-        self.left_click_region = pygame.Rect(0, 0, 0, 0)
-        self.right_click_region = pygame.Rect(0, 0, 0, 0)
-        self.forward_click_region = pygame.Rect(0, 0, 0, 0)
-        self.backward_click_region = pygame.Rect(0, 0, 0, 0)
+        self.FORCE_INCREMENT = 1
         
         # Control state
         self.left_active = False
         self.right_active = False
         self.forward_active = False
         self.backward_active = False
+        self.is_docked = True  # Start docked
         
-        # Add velocity tracking
-        self.current_velocity = [0, 0]
+        # Click regions
+        self.arrow_width = 30
+        self.arrow_height = 15
+        self.spacing = 60
         
-        # Adjust velocity thresholds and damping
-        self.VELOCITY_WARNING_THRESHOLD = 4.0  # Increased from 2.0
-        self.EMERGENCY_BRAKE_THRESHOLD = 5.0  # New threshold for slowing down
-        self.EMERGENCY_DAMPING = 0.90  # Stronger damping when over speed
+        # Initialize click regions
+        self.left_click_region = pygame.Rect(0, 0, 0, 0)
+        self.right_click_region = pygame.Rect(0, 0, 0, 0)
+        self.forward_click_region = pygame.Rect(0, 0, 0, 0)
+        self.backward_click_region = pygame.Rect(0, 0, 0, 0)
+        
+        # Wake particles
+        self.wake_particles = []
+        self.MAX_WAKE_PARTICLES = 20
         
         # Force display
         self.show_force = False
         self.force_display_time = 0
-        self.FORCE_DISPLAY_DURATION = 1000  # 1 second
+        self.FORCE_DISPLAY_DURATION = 1000
         
-    def handle_keydown(self, key):
+        # Update click regions initially
+        self.update_click_regions()
+        
+    def handle_keydown(self, event):
         """Handle key press events"""
-        if key == pygame.K_LEFT:
+        if self.is_docked and event.key != pygame.K_UP:
+            return  # Ignore all controls except UP when docked
+        
+        if event.key == pygame.K_LEFT:
             if not self.left_active:
                 # If right force exists, reduce it first
                 if self.right_force > 0:
@@ -111,7 +94,7 @@ class Boat:
                 else:
                     self.left_force = min(self.MAX_FORCE, self.left_force + self.FORCE_INCREMENT)
             self.left_active = True
-        elif key == pygame.K_RIGHT:
+        elif event.key == pygame.K_RIGHT:
             if not self.right_active:
                 # If left force exists, reduce it first
                 if self.left_force > 0:
@@ -119,7 +102,7 @@ class Boat:
                 else:
                     self.right_force = min(self.MAX_FORCE, self.right_force + self.FORCE_INCREMENT)
             self.right_active = True
-        elif key == pygame.K_UP:
+        elif event.key == pygame.K_UP:
             if not self.forward_active:
                 # If backward force exists, reduce it first
                 if self.backward_force > 0:
@@ -127,7 +110,7 @@ class Boat:
                 else:
                     self.forward_force = min(self.MAX_FORCE, self.forward_force + self.FORCE_INCREMENT)
             self.forward_active = True
-        elif key == pygame.K_DOWN:
+        elif event.key == pygame.K_DOWN:
             if not self.backward_active:
                 # If forward force exists, reduce it first
                 if self.forward_force > 0:
@@ -135,11 +118,11 @@ class Boat:
                 else:
                     self.backward_force = min(self.MAX_FORCE, self.backward_force + self.FORCE_INCREMENT)
             self.backward_active = True
-        # Rotation controls (new)
-        elif key == pygame.K_q:  # Q to rotate left
-            self.heading = (self.heading + self.rotation_speed) % 360
-        elif key == pygame.K_e:  # E to rotate right
-            self.heading = (self.heading - self.rotation_speed) % 360
+        # Rotation controls
+        elif event.key == pygame.K_q:  # Q to rotate left
+            self.heading = (self.heading + 2) % 360
+        elif event.key == pygame.K_e:  # E to rotate right
+            self.heading = (self.heading - 2) % 360
     
     def handle_keyup(self, key):
         """Handle key release events"""
@@ -154,6 +137,9 @@ class Boat:
     
     def handle_mouse_click(self, pos):
         """Handle mouse click events"""
+        if self.is_docked:
+            return  # Ignore mouse clicks when docked
+        
         try:
             if not all([self.left_click_region, self.right_click_region, 
                        self.forward_click_region, self.backward_click_region]):
@@ -228,62 +214,73 @@ class Boat:
 
     def update_click_regions(self):
         """Update click regions to match current boat position"""
-        # Get screen dimensions from rect
-        screen_width = self.screen_rect.width
-        screen_height = self.screen_rect.height
-        
-        # Calculate base positions
-        base_y = self.rect.centery
-        center_x = self.rect.centerx
-        
-        # Calculate arrow positions with fixed spacing from center
-        self.spacing = min(60, screen_width // 6)  # Adjust spacing based on screen size
-        
-        # Calculate positions with spacing
-        left_x = center_x - self.spacing
-        right_x = center_x + self.spacing
-        up_y = base_y - self.spacing
-        down_y = base_y + self.spacing
-        
-        # Ensure click regions stay within screen bounds with padding
-        padding = 10
-        left_x = max(padding, min(left_x, screen_width - self.arrow_width - padding))
-        right_x = max(padding, min(right_x, screen_width - self.arrow_width - padding))
-        up_y = max(padding, min(up_y, screen_height - self.arrow_width - padding))
-        down_y = max(padding, min(down_y, screen_height - self.arrow_width - padding))
-        
-        # Update click regions with fixed sizes and proper positioning
-        self.left_click_region = pygame.Rect(
-            left_x - self.arrow_width,
-            base_y - self.arrow_height//2,
-            self.arrow_width + 10,  # Slightly wider for better clicking
-            self.arrow_height + 10   # Slightly taller for better clicking
-        )
-        
-        self.right_click_region = pygame.Rect(
-            right_x,
-            base_y - self.arrow_height//2,
-            self.arrow_width + 10,
-            self.arrow_height + 10
-        )
-        
-        self.forward_click_region = pygame.Rect(
-            center_x - self.arrow_height//2,
-            up_y - self.arrow_width//2,
-            self.arrow_height + 10,
-            self.arrow_width + 10
-        )
-        
-        self.backward_click_region = pygame.Rect(
-            center_x - self.arrow_height//2,
-            down_y,
-            self.arrow_height + 10,
-            self.arrow_width + 10
-        )
+        try:
+            # Get screen dimensions from rect
+            screen_width = self.screen_rect.width
+            screen_height = self.screen_rect.height
+            
+            # Calculate base positions
+            base_y = self.rect.centery
+            center_x = self.rect.centerx
+            
+            # Calculate arrow positions with fixed spacing from center
+            self.spacing = min(60, screen_width // 6)  # Adjust spacing based on screen size
+            
+            # Calculate positions with spacing
+            left_x = center_x - self.spacing
+            right_x = center_x + self.spacing
+            up_y = base_y - self.spacing
+            down_y = base_y + self.spacing
+            
+            # Ensure click regions stay within screen bounds with padding
+            padding = 10
+            left_x = max(padding, min(left_x, screen_width - self.arrow_width - padding))
+            right_x = max(padding, min(right_x, screen_width - self.arrow_width - padding))
+            up_y = max(padding, min(up_y, screen_height - self.arrow_width - padding))
+            down_y = max(padding, min(down_y, screen_height - self.arrow_width - padding))
+            
+            # Update click regions with fixed sizes and proper positioning
+            self.left_click_region = pygame.Rect(
+                left_x - self.arrow_width,
+                base_y - self.arrow_height//2,
+                self.arrow_width + 10,  # Slightly wider for better clicking
+                self.arrow_height + 10   # Slightly taller for better clicking
+            )
+            
+            self.right_click_region = pygame.Rect(
+                right_x,
+                base_y - self.arrow_height//2,
+                self.arrow_width + 10,
+                self.arrow_height + 10
+            )
+            
+            self.forward_click_region = pygame.Rect(
+                center_x - self.arrow_height//2,
+                up_y - self.arrow_width//2,
+                self.arrow_height + 10,
+                self.arrow_width + 10
+            )
+            
+            self.backward_click_region = pygame.Rect(
+                center_x - self.arrow_height//2,
+                down_y,
+                self.arrow_height + 10,
+                self.arrow_width + 10
+            )
+            
+            print("Debug: Click regions updated successfully")
+        except Exception as e:
+            print(f"Debug: Error updating click regions: {e}")
 
     def update(self, current_vector):
         """Update the boat's position based on forces and currents"""
         try:
+            if self.is_docked:
+                # When docked, only allow rotation and keep position fixed
+                self.velocity = [0, 0]
+                self.momentum = [0, 0]
+                return
+            
             # Calculate directional forces with smoother transitions
             horizontal_force = (self.left_force - self.right_force) / self.MAX_FORCE
             vertical_force = (self.backward_force - self.forward_force) / self.MAX_FORCE
@@ -296,14 +293,10 @@ class Boat:
             current_speed = math.sqrt(self.velocity[0]**2 + self.velocity[1]**2)
             
             # Apply appropriate damping based on speed
-            if current_speed > self.EMERGENCY_BRAKE_THRESHOLD:
-                damping = self.EMERGENCY_DAMPING
-            elif current_speed > self.VELOCITY_WARNING_THRESHOLD:
-                # Gradually increase damping as speed increases
-                damping_factor = (current_speed - self.VELOCITY_WARNING_THRESHOLD) / (self.EMERGENCY_BRAKE_THRESHOLD - self.VELOCITY_WARNING_THRESHOLD)
-                damping = self.MOMENTUM_DAMPING * (1 - damping_factor) + self.EMERGENCY_DAMPING * damping_factor
+            if current_speed > 5.0:
+                damping = 0.90
             else:
-                damping = self.MOMENTUM_DAMPING
+                damping = 0.98
             
             # Update momentum with movement forces and dynamic damping
             self.momentum[0] = (self.momentum[0] + movement_x) * damping
@@ -313,9 +306,6 @@ class Boat:
             self.velocity[0] = self.momentum[0] + current_vector[0]
             self.velocity[1] = self.momentum[1] + current_vector[1]
             
-            # Store current velocity for warning system
-            self.current_velocity = [self.velocity[0], self.velocity[1]]
-            
             # Update position
             self.x += self.velocity[0]
             self.y += self.velocity[1]
@@ -323,8 +313,9 @@ class Boat:
             # Update rect position
             self.rect.center = (self.screen_rect.centerx, self.screen_rect.centery)
             
-            # Update wake particles
-            self.update_wake()
+            # Update wake particles only when moving
+            if current_speed > 0.1:
+                self.update_wake()
             
             # Rotate boat image based on heading
             self.image = pygame.transform.rotate(self.original_image, self.heading)
@@ -350,8 +341,13 @@ class Boat:
             
             # Check collision (using island size for radius)
             if distance < (island["size"] + boat_radius):
-                return True
-        return False
+                if island["type"] == "target_island":
+                    return "dock_success"
+                elif island["type"] == "rock":
+                    return "collision"
+                else:
+                    return "dock_fail"
+        return "no_collision"
         
     def apply_force(self, side, force):
         """Apply force to either side of the boat"""
@@ -426,6 +422,15 @@ class Boat:
             pygame.draw.polygon(screen, (0, 0, 0), points)  # Black outline
             pygame.draw.polygon(screen, color, points)
         
+        # Always draw force values
+        font = pygame.font.SysFont(None, 20)
+        
+        def draw_force_text(force, pos):
+            text = font.render(f"{force:.0f}N", True, (255, 255, 255))
+            text_rect = text.get_rect(center=pos)
+            pygame.draw.rect(screen, (0, 0, 0), text_rect.inflate(4, 4))
+            screen.blit(text, text_rect)
+        
         # Left arrow
         pygame.draw.rect(screen, (0, 0, 0), self.left_click_region.inflate(2, 2), 0)  # Background
         pygame.draw.rect(screen, left_color, self.left_click_region, 0)
@@ -435,6 +440,7 @@ class Boat:
             (left_x - self.arrow_width - 5, base_y + self.arrow_height//2)
         ]
         draw_arrow_with_background(left_arrow_points, left_color)
+        draw_force_text(self.left_force, (left_x - self.arrow_width - 20, base_y))
         
         # Right arrow
         pygame.draw.rect(screen, (0, 0, 0), self.right_click_region.inflate(2, 2), 0)
@@ -445,6 +451,7 @@ class Boat:
             (right_x + self.arrow_width + 5, base_y + self.arrow_height//2)
         ]
         draw_arrow_with_background(right_arrow_points, right_color)
+        draw_force_text(self.right_force, (right_x + self.arrow_width + 20, base_y))
         
         # Up arrow
         pygame.draw.rect(screen, (0, 0, 0), self.forward_click_region.inflate(2, 2), 0)
@@ -455,6 +462,7 @@ class Boat:
             (self.rect.centerx + self.arrow_height//2, up_y - self.arrow_width//2)
         ]
         draw_arrow_with_background(up_arrow_points, forward_color)
+        draw_force_text(self.forward_force, (self.rect.centerx, up_y - 20))
         
         # Down arrow
         pygame.draw.rect(screen, (0, 0, 0), self.backward_click_region.inflate(2, 2), 0)
@@ -465,48 +473,52 @@ class Boat:
             (self.rect.centerx + self.arrow_height//2, down_y + self.arrow_width//2)
         ]
         draw_arrow_with_background(down_arrow_points, backward_color)
-        
-        # Draw force values if active
-        if self.show_force and pygame.time.get_ticks() - self.force_display_time < self.FORCE_DISPLAY_DURATION:
-            font = pygame.font.SysFont(None, 20)
-            
-            def draw_force_text(force, pos):
-                if force > 0:
-                    text = font.render(f"{force:.0f}N", True, (255, 255, 255))
-                    text_rect = text.get_rect(center=pos)
-                    pygame.draw.rect(screen, (0, 0, 0), text_rect.inflate(4, 4))
-                    screen.blit(text, text_rect)
-            
-            # Draw force values near each arrow
-            draw_force_text(self.left_force, (left_x - self.arrow_width - 20, base_y))
-            draw_force_text(self.right_force, (right_x + self.arrow_width + 20, base_y))
-            draw_force_text(self.forward_force, (self.rect.centerx, up_y - 20))
-            draw_force_text(self.backward_force, (self.rect.centerx, down_y + 20))
+        draw_force_text(self.backward_force, (self.rect.centerx, down_y + 20))
     
     def get_position(self):
         """Return the boat's global position"""
         return (self.x, self.y)
         
     def reset(self, screen_rect):
-        """Reset the boat to starting position"""
+        """Reset boat to initial state"""
+        print("Debug: Resetting boat state")
         self.x = float(screen_rect.centerx)
         self.y = float(screen_rect.centery)
-        self.heading = 0  # Reset to facing upward
+        self.rect.center = (self.x, self.y)
+        self.heading = 0
         self.velocity = [0, 0]
         self.momentum = [0, 0]
+        self.angular_velocity = 0
+        
+        # Reset all forces
         self.left_force = 0
         self.right_force = 0
         self.forward_force = 0
         self.backward_force = 0
-        self.power_level = 50  # Reset power to default
-        self.wake_particles.clear()
         
         # Reset control states
         self.left_active = False
         self.right_active = False
         self.forward_active = False
         self.backward_active = False
-    
+        
+        # Clear wake particles
+        self.wake_particles.clear()
+        
+        # Reset force display
+        self.show_force = False
+        self.force_display_time = 0
+        
+        # Ensure click regions are properly initialized
+        self.screen_rect = screen_rect  # Update screen_rect reference
+        self.update_click_regions()
+        
+        # Update the boat image
+        self.image = pygame.transform.rotate(self.original_image, self.heading)
+        self.rect = self.image.get_rect(center=self.rect.center)
+        
+        print("Debug: Boat reset complete")
+
     def adjust_power(self, increase):
         """Adjust the boat's power level"""
         if increase:
@@ -516,4 +528,11 @@ class Boat:
 
     def get_velocity(self):
         """Get the current velocity of the boat"""
-        return self.current_velocity
+        return self.velocity
+
+    def reset_controls(self):
+        """Reset all control states"""
+        self.left_active = False
+        self.right_active = False
+        self.forward_active = False
+        self.backward_active = False

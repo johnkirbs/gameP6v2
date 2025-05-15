@@ -27,7 +27,7 @@ class GameEngine:
         self.warning_message = ""
         self.warning_start_time = 0
         self.show_warning = False
-        self.game_state = "instructions"  # New state for initial instructions
+        self.game_state = "instructions"  # Start with instructions
         self.instruction_shown = False
         
         # Initialize world position at center
@@ -43,39 +43,38 @@ class GameEngine:
         if not os.path.exists("assets/textures"):
             os.makedirs("assets/textures")
         
+        # Load background
         try:
-            # Try to load background texture
             if os.path.exists(settings.BACKGROUND_TEXTURE):
                 self.background = pygame.image.load(settings.BACKGROUND_TEXTURE)
-                # Create a repeating background
                 bg_width, bg_height = self.background.get_size()
                 self.background_large = pygame.Surface((bg_width * 5, bg_height * 5))
                 for x in range(0, 5):
                     for y in range(0, 5):
                         self.background_large.blit(self.background, (x * bg_width, y * bg_height))
             else:
-                # Fallback to a simple background if texture not found
                 self.background_large = pygame.Surface((settings.SCREEN_WIDTH * 5, settings.SCREEN_HEIGHT * 5))
                 self.background_large.fill(settings.DARK_BLUE)
-                # Draw some wave lines
                 for y in range(0, settings.SCREEN_HEIGHT * 5, 20):
                     pygame.draw.line(self.background_large, settings.BLUE, 
                                    (0, y), (settings.SCREEN_WIDTH * 5, y), 2)
         except Exception as e:
             print(f"Background loading error: {e}. Using fallback.")
-            # Fallback to a simple background
             self.background_large = pygame.Surface((settings.SCREEN_WIDTH * 5, settings.SCREEN_HEIGHT * 5))
             self.background_large.fill(settings.DARK_BLUE)
-            # Add subtle grid for motion reference
-            grid_spacing = 100
-            for x in range(0, settings.SCREEN_WIDTH * 5, grid_spacing):
-                pygame.draw.line(self.background_large, (0, 70, 130), 
-                               (x, 0), (x, settings.SCREEN_HEIGHT * 5), 1)
             for y in range(0, settings.SCREEN_HEIGHT * 5, grid_spacing):
                 pygame.draw.line(self.background_large, (0, 70, 130), 
                                (0, y), (settings.SCREEN_WIDTH * 5, y), 1)
         
-        # Generate world features
+        # Add starting island first
+        self.settings.SEA_FEATURES = [{
+            "type": "starting_island",
+            "x": 0,  # At center
+            "y": 0,
+            "size": 40  # Smaller than regular islands
+        }]
+        
+        # Generate world features (this will add other islands and rocks)
         self.generate_world_features()
         
         # Initialize game components
@@ -84,9 +83,13 @@ class GameEngine:
         self.player = Player(self.boat)
         
         # Game state
-        self.game_state = "playing"  # Can be "playing", "win", "fail", "restart"
+        self.game_state = "instructions"  # Start with instructions
         self.restart_requested = False
         self.success_start_time = 0
+        
+        # Checkpoint system
+        self.checkpoint_pos = [0, 0]  # Starting position is first checkpoint
+        self.has_checkpoint = True
         
         # Target island
         self.island_pos = [self.settings.ISLAND_DISTANCE_MIN, 0]  # Relative to start position
@@ -116,24 +119,28 @@ class GameEngine:
         self.nav_arrow_color = (255, 255, 0)  # Yellow
         self.nav_arrow_distance = 100  # Distance from boat center
         
+        # Make sure game starts in instruction state
+        self.game_state = "instructions"  # Ensure we start with instructions
+        
     def handle_event(self, event):
         """Handle game events"""
         try:
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_r and (self.game_state == "fail" or self.game_state == "win"):
-                    self.restart_game()
-                    return
-                elif event.key == pygame.K_ESCAPE:
-                    pygame.quit()
-                    sys.exit()
-                    
                 if self.game_state == "instructions":
                     self.game_state = "playing"
                     self.show_current_notification = True
                     self.current_notification = "Press UP arrow to undock the boat and start your journey!"
                     self.notification_start_time = pygame.time.get_ticks()
                     return
-                    
+                
+                if event.key == pygame.K_r and (self.game_state == "fail" or self.game_state == "win"):
+                    print("Debug: R key pressed, initiating restart")
+                    self.initiate_restart()
+                    return
+                elif event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
+                
                 if self.game_state == "playing":
                     if self.show_current_notification:
                         self.show_current_notification = False
@@ -145,14 +152,18 @@ class GameEngine:
                             self.notification_start_time = pygame.time.get_ticks()
                         return
                     
-                    if self.is_docked and (event.key in [pygame.K_UP, pygame.K_w]):
+                    if self.is_docked and event.key == pygame.K_UP:
                         self.is_docked = False
+                        self.boat.is_docked = False  # Update boat's docked state
                         self.show_current_notification = True
                         self.game_paused = True
                         self.current_notification = "Boat undocked! Navigate carefully through the currents."
                         self.notification_start_time = pygame.time.get_ticks()
+                        if hasattr(self, 'boat'):
+                            self.boat.velocity = [0, 0]  # Reset velocity when undocking
+                            self.boat.momentum = [0, 0]  # Reset momentum when undocking
                     elif not self.is_docked and hasattr(self, 'boat'):
-                        self.boat.handle_keydown(event.key)
+                        self.boat.handle_keydown(event)
             
             elif event.type == pygame.KEYUP and self.game_state == "playing" and not self.is_docked:
                 if hasattr(self, 'boat'):
@@ -161,26 +172,22 @@ class GameEngine:
                 if self.show_current_notification:
                     self.show_current_notification = False
                     self.game_paused = False
-                elif self.game_state == "playing" and not self.is_docked and hasattr(self, 'boat'):
+                elif self.game_state == "playing" and not self.is_docked:
                     # Validate mouse position is within screen bounds
                     if (0 <= event.pos[0] <= self.settings.SCREEN_WIDTH and 
                         0 <= event.pos[1] <= self.settings.SCREEN_HEIGHT):
-                        self.boat.handle_mouse_click(event.pos)
+                        if hasattr(self, 'boat'):
+                            # Reset controls before applying new ones
+                            self.boat.reset_controls()
+                            self.boat.handle_mouse_click(event.pos)
+                        
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                # Reset all active states on mouse release
-                if self.game_state == "playing" and not self.is_docked and hasattr(self, 'boat'):
-                    self.boat.left_active = False
-                    self.boat.right_active = False
-                    self.boat.forward_active = False
-                    self.boat.backward_active = False
+                if hasattr(self, 'boat'):
+                    self.boat.reset_controls()
         except Exception as e:
-            print(f"Error handling event: {e}")
-            # If there's an error, try to recover by resetting game state
-            if hasattr(self, 'boat'):
-                self.boat.left_active = False
-                self.boat.right_active = False
-                self.boat.forward_active = False
-                self.boat.backward_active = False
+            print(f"Debug: Error in handle_event: {str(e)}")
+            import traceback
+            traceback.print_exc()
     
     def generate_world_features(self):
         """Generate random world features"""
@@ -188,6 +195,19 @@ class GameEngine:
         
         # Clear existing features
         self.settings.SEA_FEATURES = []
+        
+        # Generate random rocks (4-6)
+        num_rocks = random.randint(4, 6)
+        for _ in range(num_rocks):
+            distance = random.uniform(self.settings.ISLAND_DISTANCE_MIN * 0.5,
+                                   self.settings.ISLAND_DISTANCE_MAX * 0.7)
+            angle = random.uniform(0, 2 * math.pi)
+            self.settings.SEA_FEATURES.append({
+                "type": "rock",
+                "x": distance * math.cos(angle),
+                "y": distance * math.sin(angle),
+                "size": random.randint(20, 35)  # Rocks are smaller than islands
+            })
         
         # Generate random islands (3-5)
         num_islands = random.randint(3, 5)
@@ -274,157 +294,237 @@ class GameEngine:
                 self.target_pos = [x, y]
                 break
     
-    def restart_game(self):
-        """Restart the game with new settings"""
-        # Reset world position to center
-        self.world_pos = [0, 0]
-        
-        # Generate new world features
-        self.generate_world_features()
-        
-        # Reset boat position and state
-        if hasattr(self, 'boat'):
-            self.boat.reset(self.screen.get_rect())
-        
-        # Change current direction randomly
-        import random
-        self.settings.CURRENT_DIRECTION = random.randint(0, 359)
-        self.wave_generator = WaveGenerator(self.settings)
-        
-        # Reset game state
-        self.game_state = "playing"
-        self.success_start_time = 0
-        self.is_docked = True
-        self.show_current_notification = True
-        self.current_notification = "Press UP arrow to undock the boat and start your journey!"
-        self.notification_start_time = pygame.time.get_ticks()
-        self.game_paused = True
-        self.instruction_shown = False
+    def initiate_restart(self):
+        """Safely initiate a game restart"""
+        try:
+            print("Debug: Initiating game restart")
+            # Create new boat instance
+            from game.boat import Boat
+            self.boat = Boat(self.settings, self.screen.get_rect())
+            
+            # Create new player instance with new boat
+            from game.player import Player
+            self.player = Player(self.boat)
+            
+            # Reset world position to center
+            self.world_pos = [0, 0]
+            
+            # Generate new world features
+            self.generate_world_features()
+            
+            # Reset game state variables
+            self.near_target_notified = False
+            self.instruction_shown = False
+            self.bermuda_triggered = False
+            
+            # Create new wave generator
+            from game.wave import WaveGenerator
+            self.wave_generator = WaveGenerator(self.settings)
+            
+            # Reset game state
+            self.game_state = "playing"
+            self.success_start_time = 0
+            self.is_docked = True
+            self.show_current_notification = True
+            self.current_notification = "Press UP arrow to undock the boat and start your journey!"
+            self.notification_start_time = pygame.time.get_ticks()
+            self.game_paused = True
+            
+            print("Debug: Game restart completed successfully")
+            
+        except Exception as e:
+            print(f"Debug: Error in initiate_restart: {str(e)}")
+            import traceback
+            traceback.print_exc()
     
     def update(self):
         """Update game state"""
-        current_time = pygame.time.get_ticks()
-        
-        # Handle notifications timing
-        if self.show_current_notification and current_time - self.notification_start_time > 2000:
-            self.show_current_notification = False
-            self.game_paused = False
-        
-        # Handle warning timing
-        if self.show_warning and current_time - self.warning_start_time > 2000:
-            self.show_warning = False
-        
-        if self.game_state == "win":
-            if current_time - self.success_start_time > self.settings.SUCCESS_FLASH_DURATION:
-                self.game_state = "menu"
-            return
-        elif self.game_state != "playing" or self.game_paused:
-            return
+        try:
+            current_time = pygame.time.get_ticks()
             
-        # Update game components
-        self.wave_generator.update()
-        
-        if hasattr(self, 'boat'):
-            # Get current vector before boat update
-            current_vector = self.wave_generator.get_current_vector()
+            # Handle notifications timing
+            if self.show_current_notification and current_time - self.notification_start_time > self.settings.NOTIFICATION_DURATION:
+                self.show_current_notification = False
+                self.game_paused = False
             
-            # Update boat
-            self.boat.update(current_vector)
+            # Handle warning timing
+            if self.show_warning and current_time - self.warning_start_time > self.settings.WARNING_DURATION:
+                self.show_warning = False
             
-            # Check for high velocity warning
-            velocity = self.boat.get_velocity()
-            if abs(velocity[0]) > 2 or abs(velocity[1]) > 2:
-                self.show_warning = True
-                self.warning_message = "Warning: High velocity detected!"
-                self.warning_start_time = current_time
-        
-        # Update world position
-        boat_pos = self.boat.get_position()
-        self.world_pos[0] = boat_pos[0]
-        self.world_pos[1] = boat_pos[1]
-        
-        # Check collisions with all features
-        boat_radius = self.boat.rect.width // 2
-        boat_center = (self.world_pos[0], self.world_pos[1])
-        
-        for feature in self.all_features:
-            # Calculate distance to feature center
-            dx = self.world_pos[0] - feature["x"]
-            dy = self.world_pos[1] - feature["y"]
-            distance = math.sqrt(dx*dx + dy*dy)
-            
-            # Check collision
-            if distance < (feature["size"] + boat_radius):
-                if feature["type"] == "target_island":
-                    self.game_state = "win"
-                    self.success_start_time = pygame.time.get_ticks()
-                else:
-                    self.game_state = "fail"
+            if self.game_state == "win":
                 return
-        
-        # Update background offset for tiling
-        self.background_offset[0] = -(self.world_pos[0] % self.background_large.get_width())
-        self.background_offset[1] = -(self.world_pos[1] % self.background_large.get_height())
-        
+            elif self.game_state == "fail":
+                # Show fail menu
+                return
+            elif self.game_state != "playing" or self.game_paused:
+                return
+                
+            # Only update boat if not docked
+            if not self.is_docked:
+                # Update game components
+                self.wave_generator.update()
+                
+                if hasattr(self, 'boat'):
+                    # Get current vector before boat update
+                    current_vector = self.wave_generator.get_current_vector()
+                    
+                    # Update boat
+                    self.boat.update(current_vector)
+                    
+                    # Get boat position and velocity
+                    boat_pos = self.boat.get_position()
+                    velocity = self.boat.get_velocity()
+                    
+                    # Check world boundaries and return to checkpoint
+                    if abs(boat_pos[0]) > self.settings.WORLD_BOUNDARY or abs(boat_pos[1]) > self.settings.WORLD_BOUNDARY:
+                        print("Debug: Out of bounds - returning to checkpoint")
+                        
+                        # Return to checkpoint
+                        self.boat.x = self.checkpoint_pos[0]
+                        self.boat.y = self.checkpoint_pos[1]
+                        self.boat.velocity = [0, 0]
+                        self.boat.momentum = [0, 0]
+                        self.world_pos = list(self.checkpoint_pos)
+                        
+                        # Show warning
+                        self.show_warning = True
+                        self.warning_message = "Out of bounds! Returning to checkpoint..."
+                        self.warning_start_time = current_time
+                        return
+                    
+                    # Check for collisions
+                    collision_result = self.boat.check_collision(self.all_features)
+                    if collision_result != "no_collision":
+                        if collision_result == "dock_success":
+                            print("Debug: Target island reached!")
+                            self.game_state = "win"
+                            self.success_start_time = current_time
+                            return
+                        elif collision_result == "dock_fail":
+                            print("Debug: Wrong island docking - game over")
+                            self.game_state = "fail"
+                            self.show_warning = True
+                            self.warning_message = "Wrong docking! Game Over!"
+                            self.warning_start_time = current_time
+                            return
+                        elif collision_result == "collision":
+                            print("Debug: Collision detected - game over")
+                            self.game_state = "fail"
+                            self.show_warning = True
+                            self.warning_message = "Collision! Game Over!"
+                            self.warning_start_time = current_time
+                            return
+                    
+                    # Update world position
+                    self.world_pos = list(boat_pos)
+                    
+                    # Update background offset for tiling
+                    self.background_offset[0] = -(self.world_pos[0] % self.background_large.get_width())
+                    self.background_offset[1] = -(self.world_pos[1] % self.background_large.get_height())
+                
+        except Exception as e:
+            print(f"Debug: Error in update loop: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
     def draw(self):
         """Draw the game state"""
-        # Clear the screen first
-        self.screen.fill(self.settings.BLACK)
-        
-        if self.game_state == "instructions":
-            instructions = [
-                "Welcome to the Boat Navigation Game!",
-                "",
-                "Instructions:",
-                "- Your boat starts docked at the center",
-                "- Press UP arrow to undock and begin",
-                "- Use arrow keys to control the boat",
-                "- Navigate to the glowing target island",
-                "- Avoid other islands and watch for currents",
-                "- Press ESC to exit anytime",
-                "",
-                "Press any key to continue..."
-            ]
+        try:
+            # Clear the screen first
+            self.screen.fill(self.settings.BLACK)
             
-            y_offset = self.settings.SCREEN_HEIGHT // 4
-            for line in instructions:
-                self._draw_message(line, self.settings.WHITE, y_offset)
-                y_offset += 40
-            return
-            
-        if self.game_state == "fail":
-            self._draw_message("You docked at the wrong island!", self.settings.RED)
-            self._draw_message("Press R to restart or ESC to exit", self.settings.WHITE, 
-                             self.settings.SCREEN_HEIGHT // 2 + 50)
-            return
-            
-        if self.game_state == "win":
-            self._draw_message_with_glow("Congratulations! You reached the target island!", 
-                                       self.settings.GOLD)
-            self._draw_message("Press R to play again or ESC to exit", self.settings.WHITE,
-                             self.settings.SCREEN_HEIGHT // 2 + 50)
-            return
-            
-        # Only draw game elements if in playing state
-        if self.game_state == "playing":
-            self.screen.blit(self.background_large, self.background_offset)
-            self._draw_features()
-            
-            try:
-                self.wave_generator.draw_indicator(self.screen, self.boat.rect)
-                self.boat.draw(self.screen)
-                self._draw_navigation_arrow()
-                self._draw_ui()
-            except Exception as e:
-                print(f"Error during game rendering: {e}")
-            
-            # Draw current notification if active
-            if self.show_current_notification:
-                self._draw_notification(self.current_notification)
-            
-            # Draw warning if active
-            if self.show_warning:
-                self._draw_warning(self.warning_message)
+            if self.game_state == "instructions":
+                print("Debug: Drawing instructions screen")
+                instructions = [
+                    "Welcome to the Island Navigator!",
+                    "",
+                    "Game Controls:",
+                    "- Use ARROW KEYS or CLICK the arrows around the boat",
+                    "- Q/E keys to rotate the boat",
+                    "",
+                    "Game Rules:",
+                    "- Press UP arrow to undock and start",
+                    "- Avoid rocks and wrong islands",
+                    "- Watch minimap and compass",
+                    "- Mind the currents",
+                    "",
+                    "Press ANY KEY to begin..."
+                ]
+                
+                y_offset = self.settings.SCREEN_HEIGHT // 4  # Start higher up
+                line_spacing = 25  # Reduced from 35
+                for line in instructions:
+                    self._draw_message(line, self.settings.WHITE, y_offset)
+                    y_offset += line_spacing
+                return
+                
+            if self.game_state == "fail":
+                print("Debug: Drawing fail state")
+                self._draw_message("Wrong Island! Mission Failed!", self.settings.RED)
+                
+                # Draw menu options
+                menu_options = [
+                    "Press R - Return to Checkpoint",
+                    "Press ESC - Exit Game"
+                ]
+                
+                y_offset = self.settings.SCREEN_HEIGHT // 2 + 50
+                for option in menu_options:
+                    self._draw_message(option, self.settings.WHITE, y_offset)
+                    y_offset += 40
+                return
+                
+            if self.game_state == "win":
+                print("Debug: Drawing win state")
+                self._draw_message_with_glow("Congratulations! You reached the target island!", 
+                                           self.settings.GOLD)
+                
+                # Draw menu options
+                menu_options = [
+                    "Press R - Start New Game",
+                    "Press ESC - Exit Game"
+                ]
+                
+                y_offset = self.settings.SCREEN_HEIGHT // 2 + 50
+                for option in menu_options:
+                    self._draw_message(option, self.settings.WHITE, y_offset)
+                    y_offset += 40
+                return
+                
+            # Only draw game elements if in playing state
+            if self.game_state == "playing":
+                try:
+                    print("Debug: Drawing game state")
+                    self.screen.blit(self.background_large, self.background_offset)
+                    self._draw_features()
+                    
+                    if hasattr(self, 'boat') and hasattr(self, 'wave_generator'):
+                        self.wave_generator.draw_indicator(self.screen, self.boat.rect)
+                        self.boat.draw(self.screen)
+                        self._draw_navigation_arrow()
+                        self._draw_ui()
+                    else:
+                        print("Debug: Missing boat or wave_generator")
+                    
+                    # Draw current notification if active
+                    if self.show_current_notification:
+                        print(f"Debug: Drawing notification: {self.current_notification}")
+                        self._draw_notification(self.current_notification)
+                    
+                    # Draw warning if active
+                    if self.show_warning:
+                        print(f"Debug: Drawing warning: {self.warning_message}")
+                        self._draw_warning(self.warning_message)
+                        
+                except Exception as e:
+                    print(f"Debug: Error drawing game elements: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    
+        except Exception as e:
+            print(f"Debug: Critical error in draw method: {str(e)}")
+            import traceback
+            traceback.print_exc()
     
     def _world_to_screen(self, world_pos):
         """Convert world coordinates to screen coordinates"""
@@ -433,78 +533,92 @@ class GameEngine:
         return (screen_x, screen_y)
         
     def _draw_ui(self):
-        """Draw UI elements like distance indicator"""
-        # Calculate distance to target
+        """Draw UI elements like minimap and distance indicator"""
+        # Draw minimap
+        self._draw_minimap()
+        
+        # Draw distance text at the bottom
         dx = self.target_pos[0] - self.world_pos[0]
         dy = self.target_pos[1] - self.world_pos[1]
         distance = math.sqrt(dx * dx + dy * dy)
         
-        # Draw distance text
+        # Draw distance text at bottom center
         distance_text = f"Distance: {int(distance)} m"
         font = pygame.font.SysFont(None, 30)
         text_surface = font.render(distance_text, True, self.settings.WHITE)
-        self.screen.blit(text_surface, (10, 10))
+        text_rect = text_surface.get_rect(centerx=self.settings.SCREEN_WIDTH // 2,
+                                        bottom=self.settings.SCREEN_HEIGHT - 10)
+        self.screen.blit(text_surface, text_rect)
+    
+    def _draw_minimap(self):
+        """Draw the minimap showing the entire game world"""
+        # Create minimap surface with transparency
+        minimap_surf = pygame.Surface((self.settings.MINIMAP_SIZE, self.settings.MINIMAP_SIZE), pygame.SRCALPHA)
+        minimap_surf.fill((0, 0, 0, self.settings.MINIMAP_OPACITY))
         
-        # Draw direction indicator to target (compass style)
-        indicator_radius = 45
-        center_x = self.settings.SCREEN_WIDTH - indicator_radius - 20
-        center_y = indicator_radius + 20
+        # Calculate scale factor to fit world into minimap
+        scale = self.settings.MINIMAP_SCALE
         
-        # Draw outer circle with better visibility
-        pygame.draw.circle(self.screen, (80, 80, 80), (center_x, center_y), indicator_radius + 2)  # Shadow
-        pygame.draw.circle(self.screen, self.settings.WHITE, (center_x, center_y), indicator_radius)
-        pygame.draw.circle(self.screen, (220, 220, 220), (center_x, center_y), indicator_radius - 2)  # Inner circle
+        # Draw world boundary
+        pygame.draw.rect(minimap_surf, (50, 50, 50, 100), 
+                        (0, 0, self.settings.MINIMAP_SIZE, self.settings.MINIMAP_SIZE), 1)
         
-        # Calculate angle to target
-        angle = math.degrees(math.atan2(dy, dx))
+        # Draw all features on minimap
+        minimap_center = self.settings.MINIMAP_SIZE // 2
+        for feature in self.all_features:
+            # Convert world coordinates to minimap coordinates
+            mini_x = minimap_center + feature["x"] * scale
+            mini_y = minimap_center + feature["y"] * scale
+            
+            # Only draw if within minimap bounds
+            if (0 <= mini_x <= self.settings.MINIMAP_SIZE and 
+                0 <= mini_y <= self.settings.MINIMAP_SIZE):
+                
+                if feature["type"] == "target_island":
+                    # Draw target island (larger, gold)
+                    pygame.draw.circle(minimap_surf, self.settings.MINIMAP_TARGET_COLOR,
+                                     (int(mini_x), int(mini_y)), 4)
+                elif feature["type"] == "island":
+                    # Draw regular island (green)
+                    pygame.draw.circle(minimap_surf, self.settings.MINIMAP_ISLAND_COLOR,
+                                     (int(mini_x), int(mini_y)), 2)
+                elif feature["type"] == "rock":
+                    # Draw rocks (gray)
+                    pygame.draw.circle(minimap_surf, (100, 100, 100),
+                                     (int(mini_x), int(mini_y)), 2)
         
-        # Adjust for boat heading (so indicator shows relative direction)
-        relative_angle = angle - self.boat.heading + 90
+        # Draw player position
+        player_x = minimap_center + self.world_pos[0] * scale
+        player_y = minimap_center + self.world_pos[1] * scale
+        pygame.draw.circle(minimap_surf, self.settings.MINIMAP_PLAYER_COLOR,
+                         (int(player_x), int(player_y)), 3)
         
-        # Draw compass cardinal points
-        cardinal_points = [("N", 0), ("E", 90), ("S", 180), ("W", 270)]
-        for label, degrees in cardinal_points:
-            point_x = center_x + math.cos(math.radians(degrees)) * (indicator_radius - 10)
-            point_y = center_y + math.sin(math.radians(degrees)) * (indicator_radius - 10)
-            small_font = pygame.font.SysFont(None, 20)
-            cardinal = small_font.render(label, True, (80, 80, 80))
-            self.screen.blit(cardinal, (point_x - cardinal.get_width()//2, point_y - cardinal.get_height()//2))
+        # Draw minimap border
+        pygame.draw.rect(minimap_surf, self.settings.MINIMAP_BORDER_COLOR,
+                        (0, 0, self.settings.MINIMAP_SIZE, self.settings.MINIMAP_SIZE), 2)
         
-        # Draw target direction arrow
-        arrow_length = indicator_radius - 5
-        arrow_color = self.settings.GOLD
+        # Draw compass points on minimap
+        font = pygame.font.SysFont(None, 20)
+        compass_points = [
+            ("N", (minimap_center, 5)),
+            ("S", (minimap_center, self.settings.MINIMAP_SIZE - 5)),
+            ("E", (self.settings.MINIMAP_SIZE - 5, minimap_center)),
+            ("W", (5, minimap_center))
+        ]
         
-        # Make arrow pulse based on distance
-        pulse = math.sin(pygame.time.get_ticks() / 300) * 0.2 + 0.8
-        if distance < 300:
-            # Make arrow blink faster when close to target
-            if (pygame.time.get_ticks() % 1000) > 500:
-                arrow_color = (250, 250, 50)  # Yellow
+        for label, pos in compass_points:
+            text = font.render(label, True, self.settings.WHITE)
+            text_rect = text.get_rect(center=pos)
+            minimap_surf.blit(text, text_rect)
         
-        # Draw direction arrow
-        endpoint_x = center_x + math.cos(math.radians(relative_angle)) * arrow_length * pulse
-        endpoint_y = center_y + math.sin(math.radians(relative_angle)) * arrow_length * pulse
-        
-        # Draw arrow with thickness
-        pygame.draw.line(self.screen, (0, 0, 0), (center_x, center_y), (endpoint_x, endpoint_y), 5)  # Shadow
-        pygame.draw.line(self.screen, arrow_color, (center_x, center_y), (endpoint_x, endpoint_y), 3)
-        
-        # Draw arrowhead
-        arrowhead_size = 7
-        pygame.draw.circle(self.screen, (0, 0, 0), (int(endpoint_x), int(endpoint_y)), arrowhead_size+1)  # Shadow
-        pygame.draw.circle(self.screen, arrow_color, (int(endpoint_x), int(endpoint_y)), arrowhead_size)
-        
-        # Label
-        label = font.render("Target", True, self.settings.WHITE)
-        self.screen.blit(label, (center_x - label.get_width() // 2, center_y - indicator_radius - 30))
-        
-        # Add mini version of distance
-        mini_dist = font.render(f"{int(distance)}m", True, self.settings.WHITE)
-        self.screen.blit(mini_dist, (center_x - mini_dist.get_width() // 2, center_y + indicator_radius + 5))
+        # Position minimap in lower-right corner with margin
+        minimap_x = self.settings.SCREEN_WIDTH - self.settings.MINIMAP_SIZE - self.settings.MINIMAP_MARGIN
+        minimap_y = self.settings.SCREEN_HEIGHT - self.settings.MINIMAP_SIZE - self.settings.MINIMAP_MARGIN
+        self.screen.blit(minimap_surf, (minimap_x, minimap_y))
     
     def _draw_message(self, message, color, y_offset=None):
         """Draw a centered message on the screen"""
-        font = pygame.font.SysFont(None, 36)
+        font = pygame.font.SysFont(None, 24)  # Reduced from 36 to 24
         text_surface = font.render(message, True, color)
         
         if y_offset is None:
@@ -614,7 +728,29 @@ class GameEngine:
                 if (-100 <= screen_pos[0] <= self.settings.SCREEN_WIDTH + 100 and
                     -100 <= screen_pos[1] <= self.settings.SCREEN_HEIGHT + 100):
                     
-                    if feature["type"] == "target_island":
+                    if feature["type"] == "starting_island":
+                        # Draw starting island (blue color to distinguish)
+                        pygame.draw.circle(self.screen, self.settings.BLUE,
+                                         screen_pos, feature["size"])
+                        pygame.draw.circle(self.screen, self.settings.LIGHT_BLUE,
+                                         screen_pos, feature["size"] - 3)
+                        # Add "START" text above
+                        font = pygame.font.SysFont(None, 24)
+                        text = font.render("START", True, self.settings.WHITE)
+                        text_rect = text.get_rect(center=(screen_pos[0], screen_pos[1] - feature["size"] - 10))
+                        self.screen.blit(text, text_rect)
+                    
+                    elif feature["type"] == "rock":
+                        # Draw rock
+                        rock_color = (100, 100, 100)  # Gray color for rocks
+                        pygame.draw.circle(self.screen, rock_color,
+                                         screen_pos, feature["size"])
+                        # Add some texture/detail to rocks
+                        pygame.draw.circle(self.screen, (80, 80, 80),
+                                         (screen_pos[0] - 5, screen_pos[1] - 5),
+                                         feature["size"] // 3)
+                    
+                    elif feature["type"] == "target_island":
                         # Draw target island with enhanced glow effect
                         glow_surf = pygame.Surface((feature["size"] * 3, feature["size"] * 3),
                                                 pygame.SRCALPHA)

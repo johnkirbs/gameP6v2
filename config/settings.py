@@ -40,17 +40,31 @@ class Settings:
         self.ISLAND_RADIUS = 60
         self.ISLAND_GLOW_INTENSITY = 0.8
         
+        # World boundaries
+        self.WORLD_BOUNDARY = 2000  # Maximum distance from center
+        self.WORLD_SIZE = self.WORLD_BOUNDARY * 2  # Total world size
+        
         # World generation settings
-        self.MIN_FEATURE_DISTANCE = 200  # Minimum distance between features
-        self.TREE_MIN_SIZE = 10
-        self.TREE_MAX_SIZE = 15
-        self.OTHER_BOAT_SIZE = 20
-        self.MIN_ISLANDS = 3
-        self.MAX_ISLANDS = 5
-        self.TREES_PER_ISLAND_MIN = 2
-        self.TREES_PER_ISLAND_MAX = 4
-        self.MIN_OTHER_BOATS = 2
-        self.MAX_OTHER_BOATS = 3
+        self.MIN_FEATURE_DISTANCE = 250  # Increased minimum distance between features
+        self.TREE_MIN_SIZE = 8  # Reduced tree size
+        self.TREE_MAX_SIZE = 12
+        self.OTHER_BOAT_SIZE = 15  # Reduced boat size
+        self.MIN_ISLANDS = 4
+        self.MAX_ISLANDS = 6
+        self.TREES_PER_ISLAND_MIN = 1  # Reduced minimum trees
+        self.TREES_PER_ISLAND_MAX = 3  # Reduced maximum trees
+        self.MIN_OTHER_BOATS = 1  # Reduced minimum boats
+        self.MAX_OTHER_BOATS = 2  # Reduced maximum boats
+        
+        # Mini-map settings
+        self.MINIMAP_SIZE = 150  # Size of the minimap square
+        self.MINIMAP_MARGIN = 20  # Margin from screen edge
+        self.MINIMAP_OPACITY = 180  # Opacity of minimap (0-255)
+        self.MINIMAP_BORDER_COLOR = self.WHITE
+        self.MINIMAP_PLAYER_COLOR = (0, 255, 0)  # Green for player
+        self.MINIMAP_TARGET_COLOR = self.GOLD
+        self.MINIMAP_ISLAND_COLOR = self.GREEN
+        self.MINIMAP_SCALE = 0.1  # Scale factor for minimap (world to minimap coordinates)
         
         # Initialize empty features list
         self.SEA_FEATURES = []
@@ -59,13 +73,13 @@ class Settings:
         self.MIN_WAVE_MAGNITUDE = 0.3
         self.MAX_WAVE_MAGNITUDE = 1.5
         self.WAVE_CHANGE_INTERVAL = 4000
-        self.WAVE_PARTICLE_COUNT = 20
+        self.WAVE_PARTICLE_COUNT = 15
         
         # Visual effects
-        self.WATER_RIPPLE_SPEED = 0.5
-        self.WATER_RIPPLE_SIZE = 2.0
-        self.PARTICLE_ALPHA_DECAY = 0.02
-        self.PARTICLE_SIZE_DECAY = 0.95
+        self.WATER_RIPPLE_SPEED = 0.4  # Slightly reduced for better performance
+        self.WATER_RIPPLE_SIZE = 1.5
+        self.PARTICLE_ALPHA_DECAY = 0.03  # Faster particle decay
+        self.PARTICLE_SIZE_DECAY = 0.97
         
         # Success effect settings
         self.SUCCESS_FLASH_DURATION = 2000
