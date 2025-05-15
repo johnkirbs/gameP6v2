@@ -333,6 +333,15 @@ class Boat:
         boat_radius = self.rect.width // 2  # Simplified circular collision
         boat_center = (self.x, self.y)
         
+        # Calculate current velocity magnitude
+        current_speed = math.sqrt(self.velocity[0]**2 + self.velocity[1]**2)
+        MAX_DOCKING_SPEED = 2.0  # Maximum safe speed for docking
+        MAX_SAFE_SPEED = 8.0  # Maximum safe speed for general navigation
+        
+        # Check for excessive speed first
+        if current_speed > MAX_SAFE_SPEED:
+            return "crash_speed_general"  # New result for general high-speed crash
+        
         for island in islands:
             # Calculate distance to island center
             dx = self.x - island["x"]
@@ -341,6 +350,11 @@ class Boat:
             
             # Check collision (using island size for radius)
             if distance < (island["size"] + boat_radius):
+                # Always check speed first when colliding with any island
+                if current_speed > MAX_DOCKING_SPEED:
+                    return "crash_speed_dock"  # High-speed collision with any island
+                    
+                # Only then check island type
                 if island["type"] == "target_island":
                     return "dock_success"
                 elif island["type"] == "rock":
@@ -414,15 +428,68 @@ class Boat:
         forward_color = (255, int(255 * (1 - self.forward_force/self.MAX_FORCE)), 0) if self.forward_active else (180, 180, 180)
         backward_color = (255, int(255 * (1 - self.backward_force/self.MAX_FORCE)), 0) if self.backward_active else (180, 180, 180)
         
-        # Draw arrows with thinner lines
-        arrow_thickness = 2
+        def draw_arrow(surface, color, start_pos, end_pos, width=3):
+            """Draw an arrow from start_pos to end_pos"""
+            pygame.draw.line(surface, color, start_pos, end_pos, width)
+            # Calculate arrow head
+            angle = math.atan2(end_pos[1] - start_pos[1], end_pos[0] - start_pos[0])
+            arrow_size = 10
+            angle_left = angle + math.pi/6
+            angle_right = angle - math.pi/6
+            
+            # Arrow head points
+            head_left = (
+                end_pos[0] - arrow_size * math.cos(angle_left),
+                end_pos[1] - arrow_size * math.sin(angle_left)
+            )
+            head_right = (
+                end_pos[0] - arrow_size * math.cos(angle_right),
+                end_pos[1] - arrow_size * math.sin(angle_right)
+            )
+            
+            # Draw arrow head
+            pygame.draw.polygon(surface, color, [end_pos, head_left, head_right])
         
-        # Draw arrow backgrounds for better visibility
-        def draw_arrow_with_background(points, color):
-            pygame.draw.polygon(screen, (0, 0, 0), points)  # Black outline
-            pygame.draw.polygon(screen, color, points)
+        def draw_control_arrow(center_pos, direction, color, active):
+            """Draw a control arrow with background and glow effect"""
+            arrow_length = 25
+            if direction == "left":
+                # Point towards boat (right to left)
+                start_pos = (center_pos[0] + arrow_length, center_pos[1])
+                end_pos = (center_pos[0] - arrow_length, center_pos[1])
+            elif direction == "right":
+                # Point towards boat (left to right)
+                start_pos = (center_pos[0] - arrow_length, center_pos[1])
+                end_pos = (center_pos[0] + arrow_length, center_pos[1])
+            elif direction == "up":
+                start_pos = (center_pos[0], center_pos[1] + arrow_length)
+                end_pos = (center_pos[0], center_pos[1] - arrow_length)
+            else:  # down
+                start_pos = (center_pos[0], center_pos[1] - arrow_length)
+                end_pos = (center_pos[0], center_pos[1] + arrow_length)
+            
+            # Draw glow effect if active
+            if active:
+                glow_surf = pygame.Surface((arrow_length * 3, arrow_length * 3), pygame.SRCALPHA)
+                glow_color = (*color[:3], 50)  # Semi-transparent version of the color
+                draw_arrow(glow_surf, glow_color, 
+                          (glow_surf.get_width()//2, glow_surf.get_height()//2),
+                          (glow_surf.get_width()//2 + (end_pos[0] - start_pos[0]),
+                           glow_surf.get_height()//2 + (end_pos[1] - start_pos[1])), width=5)
+                screen.blit(glow_surf, 
+                           (start_pos[0] - glow_surf.get_width()//2,
+                            start_pos[1] - glow_surf.get_height()//2))
+            
+            # Draw main arrow
+            draw_arrow(screen, color, start_pos, end_pos)
         
-        # Always draw force values
+        # Draw the control arrows
+        draw_control_arrow((left_x, base_y), "left", left_color, self.left_active)
+        draw_control_arrow((right_x, base_y), "right", right_color, self.right_active)
+        draw_control_arrow((self.rect.centerx, up_y), "up", forward_color, self.forward_active)
+        draw_control_arrow((self.rect.centerx, down_y), "down", backward_color, self.backward_active)
+        
+        # Draw force values with current speed
         font = pygame.font.SysFont(None, 20)
         
         def draw_force_text(force, pos):
@@ -431,49 +498,19 @@ class Boat:
             pygame.draw.rect(screen, (0, 0, 0), text_rect.inflate(4, 4))
             screen.blit(text, text_rect)
         
-        # Left arrow
-        pygame.draw.rect(screen, (0, 0, 0), self.left_click_region.inflate(2, 2), 0)  # Background
-        pygame.draw.rect(screen, left_color, self.left_click_region, 0)
-        left_arrow_points = [
-            (left_x - self.arrow_width, base_y),
-            (left_x - self.arrow_width - 5, base_y - self.arrow_height//2),
-            (left_x - self.arrow_width - 5, base_y + self.arrow_height//2)
-        ]
-        draw_arrow_with_background(left_arrow_points, left_color)
+        # Draw force values
         draw_force_text(self.left_force, (left_x - self.arrow_width - 20, base_y))
-        
-        # Right arrow
-        pygame.draw.rect(screen, (0, 0, 0), self.right_click_region.inflate(2, 2), 0)
-        pygame.draw.rect(screen, right_color, self.right_click_region, 0)
-        right_arrow_points = [
-            (right_x + self.arrow_width, base_y),
-            (right_x + self.arrow_width + 5, base_y - self.arrow_height//2),
-            (right_x + self.arrow_width + 5, base_y + self.arrow_height//2)
-        ]
-        draw_arrow_with_background(right_arrow_points, right_color)
         draw_force_text(self.right_force, (right_x + self.arrow_width + 20, base_y))
-        
-        # Up arrow
-        pygame.draw.rect(screen, (0, 0, 0), self.forward_click_region.inflate(2, 2), 0)
-        pygame.draw.rect(screen, forward_color, self.forward_click_region, 0)
-        up_arrow_points = [
-            (self.rect.centerx, up_y - self.arrow_width//2 - 5),
-            (self.rect.centerx - self.arrow_height//2, up_y - self.arrow_width//2),
-            (self.rect.centerx + self.arrow_height//2, up_y - self.arrow_width//2)
-        ]
-        draw_arrow_with_background(up_arrow_points, forward_color)
         draw_force_text(self.forward_force, (self.rect.centerx, up_y - 20))
-        
-        # Down arrow
-        pygame.draw.rect(screen, (0, 0, 0), self.backward_click_region.inflate(2, 2), 0)
-        pygame.draw.rect(screen, backward_color, self.backward_click_region, 0)
-        down_arrow_points = [
-            (self.rect.centerx, down_y + self.arrow_width//2 + 5),
-            (self.rect.centerx - self.arrow_height//2, down_y + self.arrow_width//2),
-            (self.rect.centerx + self.arrow_height//2, down_y + self.arrow_width//2)
-        ]
-        draw_arrow_with_background(down_arrow_points, backward_color)
         draw_force_text(self.backward_force, (self.rect.centerx, down_y + 20))
+        
+        # Draw current speed
+        current_speed = math.sqrt(self.velocity[0]**2 + self.velocity[1]**2)
+        speed_color = (255, 255, 255) if current_speed <= 2.0 else (255, 165, 0) if current_speed <= 8.0 else (255, 0, 0)
+        speed_text = font.render(f"Speed: {current_speed:.1f}", True, speed_color)
+        speed_rect = speed_text.get_rect(center=(self.rect.centerx, self.rect.centery - 40))
+        pygame.draw.rect(screen, (0, 0, 0), speed_rect.inflate(4, 4))
+        screen.blit(speed_text, speed_rect)
     
     def get_position(self):
         """Return the boat's global position"""

@@ -354,7 +354,6 @@ class GameEngine:
             if self.game_state == "win":
                 return
             elif self.game_state == "fail":
-                # Show fail menu
                 return
             elif self.game_state != "playing" or self.game_paused:
                 return
@@ -395,6 +394,23 @@ class GameEngine:
                     # Check for collisions
                     collision_result = self.boat.check_collision(self.all_features)
                     if collision_result != "no_collision":
+                        # Handle speed-related crashes first
+                        if collision_result == "crash_speed_general":
+                            print("Debug: Crashed due to excessive speed!")
+                            self.game_state = "fail"
+                            self.show_warning = True
+                            self.warning_message = "Fast velocity, boat crashed!"
+                            self.warning_start_time = current_time
+                            return
+                        elif collision_result == "crash_speed_dock":
+                            print("Debug: Crashed due to high docking speed!")
+                            self.game_state = "fail"
+                            self.show_warning = True
+                            self.warning_message = "Fast velocity, boat crashed!"
+                            self.warning_start_time = current_time
+                            return
+                        
+                        # Handle other collision types
                         if collision_result == "dock_success":
                             print("Debug: Target island reached!")
                             self.game_state = "win"
