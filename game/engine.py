@@ -19,16 +19,35 @@ class GameEngine:
         
         # Background and world coordinates
         self.background_offset = [0, 0]
+        
+        # Check if assets directory exists, if not create it
+        import os
+        if not os.path.exists("assets"):
+            os.makedirs("assets")
+        if not os.path.exists("assets/textures"):
+            os.makedirs("assets/textures")
+        
         try:
-            self.background = pygame.image.load(settings.BACKGROUND_TEXTURE)
-            # Create a repeating background
-            bg_width, bg_height = self.background.get_size()
-            self.background_large = pygame.Surface((bg_width * 5, bg_height * 5))
-            for x in range(0, 5):
-                for y in range(0, 5):
-                    self.background_large.blit(self.background, (x * bg_width, y * bg_height))
-        except pygame.error:
-            # Fallback to a simple background if texture not found
+            # Try to load background texture
+            if os.path.exists(settings.BACKGROUND_TEXTURE):
+                self.background = pygame.image.load(settings.BACKGROUND_TEXTURE)
+                # Create a repeating background
+                bg_width, bg_height = self.background.get_size()
+                self.background_large = pygame.Surface((bg_width * 5, bg_height * 5))
+                for x in range(0, 5):
+                    for y in range(0, 5):
+                        self.background_large.blit(self.background, (x * bg_width, y * bg_height))
+            else:
+                # Fallback to a simple background if texture not found
+                self.background_large = pygame.Surface((settings.SCREEN_WIDTH * 5, settings.SCREEN_HEIGHT * 5))
+                self.background_large.fill(settings.DARK_BLUE)
+                # Draw some wave lines
+                for y in range(0, settings.SCREEN_HEIGHT * 5, 20):
+                    pygame.draw.line(self.background_large, settings.BLUE, 
+                                   (0, y), (settings.SCREEN_WIDTH * 5, y), 2)
+        except Exception as e:
+            print(f"Background loading error: {e}. Using fallback.")
+            # Fallback to a simple background
             self.background_large = pygame.Surface((settings.SCREEN_WIDTH * 5, settings.SCREEN_HEIGHT * 5))
             self.background_large.fill(settings.DARK_BLUE)
             # Draw some wave lines
@@ -48,9 +67,17 @@ class GameEngine:
         # Target island
         self.island_pos = [settings.ISLAND_DISTANCE, 0]  # Relative to start position
         try:
-            self.island_image = pygame.image.load(settings.ISLAND_TEXTURE)
-            self.island_rect = self.island_image.get_rect()
-        except pygame.error:
+            if os.path.exists(settings.ISLAND_TEXTURE):
+                self.island_image = pygame.image.load(settings.ISLAND_TEXTURE)
+                self.island_rect = self.island_image.get_rect()
+            else:
+                # Fallback island
+                self.island_image = pygame.Surface((settings.ISLAND_RADIUS * 2, settings.ISLAND_RADIUS * 2), pygame.SRCALPHA)
+                pygame.draw.circle(self.island_image, settings.GREEN, 
+                                  (settings.ISLAND_RADIUS, settings.ISLAND_RADIUS), settings.ISLAND_RADIUS)
+                self.island_rect = self.island_image.get_rect()
+        except Exception as e:
+            print(f"Island image loading error: {e}. Using fallback.")
             # Fallback island
             self.island_image = pygame.Surface((settings.ISLAND_RADIUS * 2, settings.ISLAND_RADIUS * 2), pygame.SRCALPHA)
             pygame.draw.circle(self.island_image, settings.GREEN, 

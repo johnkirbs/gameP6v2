@@ -10,11 +10,20 @@ class Boat:
         self.screen_rect = screen_rect
         
         # Load the boat image
+        import os
         try:
-            self.original_image = pygame.image.load(settings.BOAT_TEXTURE)
-            self.rect = self.original_image.get_rect()
-        except pygame.error:
-            # Fallback to a simple surface if texture not found
+            if os.path.exists(settings.BOAT_TEXTURE):
+                self.original_image = pygame.image.load(settings.BOAT_TEXTURE)
+                self.rect = self.original_image.get_rect()
+            else:
+                # Fallback to a simple boat shape if texture not found
+                self.original_image = pygame.Surface((30, 60), pygame.SRCALPHA)
+                pygame.draw.polygon(self.original_image, settings.WHITE, 
+                                   [(15, 0), (30, 60), (15, 45), (0, 60)])
+                self.rect = self.original_image.get_rect()
+        except Exception as e:
+            print(f"Boat image loading error: {e}. Using fallback.")
+            # Fallback to a simple boat shape
             self.original_image = pygame.Surface((30, 60), pygame.SRCALPHA)
             pygame.draw.polygon(self.original_image, settings.WHITE, 
                                [(15, 0), (30, 60), (15, 45), (0, 60)])
